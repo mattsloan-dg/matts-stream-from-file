@@ -52,7 +52,7 @@ function connectWithAuth(url, authToken, filePath) {
     console.log("Connection closed:", code, reason.toString());
   });
 
-  function streamAudioData() {
+  async function streamAudioData() {
     // Get audio format information from the WAV file
     const audioFormat = getWavFormat(filePath);
     console.log(
@@ -66,35 +66,61 @@ function connectWithAuth(url, authToken, filePath) {
       sampleRate: audioFormat.sampleRate,
     });
 
-    const fileStream = createReadStream(filePath, {
-      start: 44, // Skip WAV header (typically 44 bytes)
-      highWaterMark: 4096, // Smaller chunks for better streaming
-    });
+    // Load entire audio file into buffer (skip 44-byte WAV header)
+    const audioBuffer = readFileSync(filePath).slice(44);
 
-    console.log("Starting audio playback through speakers...");
+    // Calculate bytes per second based on audio format
+    const bytesPerSecond =
+      audioFormat.sampleRate *
+      (audioFormat.bitDepth / 8) *
+      audioFormat.channels;
 
-    fileStream.on("data", (chunk) => {
+    console.log(`Bytes per second: ${bytesPerSecond}`);
+    console.log(
+      `Total audio duration: ${(audioBuffer.length / bytesPerSecond).toFixed(
+        2
+      )} seconds`
+    );
+    console.log("Starting real-time audio streaming simulation...");
+
+    // Helper function to sleep
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Stream audio in 1-second chunks
+    let offset = 0;
+    let chunkNumber = 0;
+
+    while (offset < audioBuffer.length) {
+      chunkNumber++;
+
+      // Get 1 second worth of audio data
+      const chunkSize = bytesPerSecond;
+      const chunk = audioBuffer.slice(offset, offset + chunkSize);
+
+      console.log(`Sending chunk ${chunkNumber} (${chunk.length} bytes)...`);
+
       // Send to WebSocket for transcription
       ws.send(chunk);
 
       // Send to speaker for playback
       speaker.write(chunk);
-    });
 
-    fileStream.on("end", () => {
-      console.log("File streaming complete");
+      offset += chunkSize;
 
-      // Close the speaker when done
-      speaker.end();
+      // Wait 1 second before sending next chunk (unless this is the last chunk)
+      if (offset < audioBuffer.length) {
+        await sleep(1000);
+      }
+    }
 
-      setTimeout(() => {
-        ws.send(JSON.stringify({ type: "keepAlive" }));
-      }, 1000);
-    });
+    console.log("File streaming complete");
 
-    fileStream.on("error", (error) => {
-      console.error("File stream error:", error);
-    });
+    // Close the speaker when done
+    speaker.end();
+
+    setTimeout(() => {
+      ws.send(JSON.stringify({ type: "keepAlive" }));
+    }, 1000);
 
     speaker.on("close", () => {
       console.log("Audio playback finished");
