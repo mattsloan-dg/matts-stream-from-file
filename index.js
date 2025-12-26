@@ -1,5 +1,6 @@
 import { createReadStream } from "fs";
 import WebSocket from "ws";
+import Speaker from "speaker";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -32,17 +33,35 @@ function connectWithAuth(url, authToken, filePath) {
   });
 
   function streamAudioData() {
+    // Create speaker instance for audio playback
+    // Using 16kHz sample rate, 16-bit, 1 channel (mono) to match the WebSocket settings
+    const speaker = new Speaker({
+      channels: 1, // Mono audio
+      bitDepth: 16, // 16-bit
+      sampleRate: 16000, // 16kHz sample rate
+    });
+
     const fileStream = createReadStream(filePath, {
       start: 44, // Skip WAV header (typically 44 bytes)
       highWaterMark: 4096, // Smaller chunks for better streaming
     });
 
+    console.log("Starting audio playback through speakers...");
+
     fileStream.on("data", (chunk) => {
+      // Send to WebSocket for transcription
       ws.send(chunk);
+
+      // Send to speaker for playback
+      speaker.write(chunk);
     });
 
     fileStream.on("end", () => {
       console.log("File streaming complete");
+
+      // Close the speaker when done
+      speaker.end();
+
       setTimeout(() => {
         ws.send(JSON.stringify({ type: "keepAlive" }));
       }, 1000);
@@ -50,6 +69,10 @@ function connectWithAuth(url, authToken, filePath) {
 
     fileStream.on("error", (error) => {
       console.error("File stream error:", error);
+    });
+
+    speaker.on("close", () => {
+      console.log("Audio playback finished");
     });
   }
 
