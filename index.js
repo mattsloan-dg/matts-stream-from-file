@@ -41,6 +41,17 @@ function connectWithAuth(url, authToken, filePath) {
 
   ws.on("message", (data) => {
     //console.log("Received:", data.toString());
+    const message = JSON.parse(data);
+
+    // Handle Metadata message for graceful closure
+    if (message.type === "Metadata") {
+      console.log(
+        `Received final metadata message. Request id: ${message.request_id}`
+      );
+      ws.close();
+      return;
+    }
+
     processTranscriptMessage(data);
   });
 
@@ -118,9 +129,21 @@ function connectWithAuth(url, authToken, filePath) {
     // Close the speaker when done
     speaker.end();
 
-    setTimeout(() => {
-      ws.send(JSON.stringify({ type: "keepAlive" }));
-    }, 1000);
+    // Gracefully close the websocket connection
+    console.log("Initiating graceful websocket closure...");
+
+    // Step 1: Send Finalize message
+    ws.send(JSON.stringify({ type: "Finalize" }));
+    console.log("Sent Finalize message");
+
+    // Step 2: Wait 1 second
+    await sleep(1000);
+
+    // Step 3: Send CloseStream message
+    ws.send(JSON.stringify({ type: "CloseStream" }));
+    console.log("Sent CloseStream message");
+
+    // Step 4: Wait for Metadata message (handled in ws.on("message") handler)
 
     speaker.on("close", () => {
       console.log("Audio playback finished");
