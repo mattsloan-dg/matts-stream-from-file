@@ -1,10 +1,30 @@
-import { createReadStream } from "fs";
+import { createReadStream, readFileSync } from "fs";
 import WebSocket from "ws";
 import Speaker from "speaker";
 import dotenv from "dotenv";
 dotenv.config();
 
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+
+// Function to read WAV file header and extract audio format information
+function getWavFormat(filePath) {
+  const buffer = readFileSync(filePath);
+
+  // Check if it's a valid WAV file
+  if (
+    buffer.toString("ascii", 0, 4) !== "RIFF" ||
+    buffer.toString("ascii", 8, 12) !== "WAVE"
+  ) {
+    throw new Error("Not a valid WAV file");
+  }
+
+  // Read WAV format information from header
+  const channels = buffer.readUInt16LE(22); // Bytes 22-23: Number of channels
+  const sampleRate = buffer.readUInt32LE(24); // Bytes 24-27: Sample rate
+  const bitDepth = buffer.readUInt16LE(34); // Bytes 34-35: Bits per sample
+
+  return { channels, sampleRate, bitDepth };
+}
 
 function connectWithAuth(url, authToken, filePath) {
   const ws = new WebSocket(url, {
@@ -33,12 +53,17 @@ function connectWithAuth(url, authToken, filePath) {
   });
 
   function streamAudioData() {
-    // Create speaker instance for audio playback
-    // Using 16kHz sample rate, 16-bit, 1 channel (mono) to match the WebSocket settings
+    // Get audio format information from the WAV file
+    const audioFormat = getWavFormat(filePath);
+    console.log(
+      `Detected audio format: ${audioFormat.sampleRate}Hz, ${audioFormat.bitDepth}-bit, ${audioFormat.channels} channel(s)`
+    );
+
+    // Create speaker instance for audio playback using detected format
     const speaker = new Speaker({
-      channels: 1, // Mono audio
-      bitDepth: 16, // 16-bit
-      sampleRate: 16000, // 16kHz sample rate
+      channels: audioFormat.channels,
+      bitDepth: audioFormat.bitDepth,
+      sampleRate: audioFormat.sampleRate,
     });
 
     const fileStream = createReadStream(filePath, {
@@ -131,10 +156,17 @@ function connectWithAuth(url, authToken, filePath) {
   return ws;
 }
 
-// SET PARAMS MANUALLY HERE in the URL
-// ALSO CHECK THE URL FOR SANDBOX or PROD
-connectWithAuth(
-  "wss://api.deepgram.com/v1/listen?sample_rate=16000&encoding=linear16&smart_format=true",
-  DEEPGRAM_API_KEY,
-  "./example.wav"
+// Detect audio format from the file
+const filePath = "./example.wav";
+const audioFormat = getWavFormat(filePath);
+
+// Build WebSocket URL with detected sample rate
+const wsUrl = `wss://api.deepgram.com/v1/listen?sample_rate=${audioFormat.sampleRate}&encoding=linear16&smart_format=true`;
+
+console.log(
+  `Connecting to Deepgram with sample rate: ${audioFormat.sampleRate}Hz`
 );
+
+// SET PARAMS HERE - now using detected values
+// ALSO CHECK THE URL FOR SANDBOX or PROD
+connectWithAuth(wsUrl, DEEPGRAM_API_KEY, filePath);
