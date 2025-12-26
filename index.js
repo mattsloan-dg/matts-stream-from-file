@@ -111,7 +111,7 @@ function connectWithAuth(url, authToken, filePath) {
 // SET PARAMS MANUALLY HERE in the URL
 // ALSO CHECK THE URL FOR SANDBOX or PROD
 connectWithAuth(
-  "wss://api.sandbox.deepgram.com/v1/listen?sample_rate=16000&encoding=linear16&diarize=true",
+  "wss://api.deepgram.com/v1/listen?sample_rate=16000&encoding=linear16&smart_format=true",
   DEEPGRAM_API_KEY,
-  "./athena.wav"
+  "./example.wav"
 );
